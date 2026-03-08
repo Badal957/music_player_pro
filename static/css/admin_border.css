@@ -1,0 +1,38 @@
+/* 1. The Two-Color Sliding Animation */
+@keyframes dual-color-border {
+    0% { background-position: 0% 50%; }
+    100% { background-position: 200% 50%; }
+}
+
+/* 2. Target the username text */
+div[x-on\:click*="openUserLinks"] .font-semibold.truncate {
+    /* The sharp 50/50 Two-Color Split (Cyan and Pink) */
+    background-image: linear-gradient(
+        90deg, 
+        #eaea09 0%, #05eed3 50%, 
+        #ade80a 50%, #ff008c 100%
+    ) !important;
+    background-size: 200% auto !important;
+    
+    /* Clip the gradient to the text shape */
+    -webkit-background-clip: text !important;
+    background-clip: text !important;
+    
+    /* --- THE BORDER MAGIC --- */
+    /* 1. Make the border 1.5px thick and transparent so the gradient shines through */
+    -webkit-text-stroke: 1.5px transparent !important;
+    
+    /* 2. Force the inside of the text to be solid dark gray to match the sidebar */
+    -webkit-text-fill-color: #000000 !important; 
+    color: #000000 !important;
+    
+    /* The sliding animation */
+    animation: dual-color-border 3s linear infinite !important;
+    display: inline-block !important;
+    
+    /* Clean up any lingering shadows */
+    background-color: transparent !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+    border: none !important;
+}

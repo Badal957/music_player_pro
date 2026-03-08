@@ -1,0 +1,327 @@
+import React, { useState, useEffect, useRef } from 'react';
+
+function App() {
+  const [library, setLibrary] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [progress, setProgress] = useState(0);
+
+  // 1. VOLUME MEMORY: Initialize from localStorage
+  const [volume, setVolume] = useState(() => {
+    const savedVolume = localStorage.getItem('studio-volume');
+    return savedVolume !== null ? parseFloat(savedVolume) : 0.8;
+  });
+
+  const audioRef = useRef(null);
+  const canvasRef = useRef(null);
+  const audioCtxRef = useRef(null);
+  const analyzerRef = useRef(null);
+  const gainNodeRef = useRef(null);
+
+  // 2. DYNAMIC GENRE BACKGROUNDS: Mapping genres to tailwind gradients
+  const genreColors = {
+    "Lo-fi": "from-indigo-900/40 to-slate-900/20",
+    "Electronic": "from-purple-900/40 to-fuchsia-950/20",
+    "Rock": "from-red-900/40 to-zinc-950/20",
+    "Hip-hop": "from-emerald-900/40 to-teal-950/20",
+    "Pop": "from-pink-900/30 to-rose-950/20",
+    "Default": "from-blue-900/20 to-indigo-950/20"
+  };
+
+  const currentGenre = library[currentTrackIndex]?.genre || "Default";
+  const bgGradient = genreColors[currentGenre] || genreColors["Default"];
+
+  const filteredLibrary = library.filter(song => 
+    song.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    song.artist_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  useEffect(() => {
+    const fetchMusic = async () => {
+      const timeout = setTimeout(() => setIsLoading(false), 5000);
+      try {
+        const response = await fetch('http://127.0.0.1:8000/api/songs/');
+        const data = await response.json();
+        setLibrary(data);
+        clearTimeout(timeout);
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Failed to load music:", error);
+        setIsLoading(false);
+      }
+    };
+    fetchMusic();
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.code === 'ArrowRight') {
+        handleNext();
+      } else if (e.code === 'ArrowLeft') {
+        handlePrev();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPlaying, library, currentTrackIndex]);
+
+  const initVisualizer = () => {
+    if (!audioCtxRef.current) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      audioCtxRef.current = new AudioContext();
+      analyzerRef.current = audioCtxRef.current.createAnalyser();
+      const source = audioCtxRef.current.createMediaElementSource(audioRef.current);
+      gainNodeRef.current = audioCtxRef.current.createGain();
+      gainNodeRef.current.gain.value = volume;
+
+      source.connect(analyzerRef.current);
+      analyzerRef.current.connect(gainNodeRef.current);
+      gainNodeRef.current.connect(audioCtxRef.current.destination);
+      
+      analyzerRef.current.fftSize = 256;
+      drawVisualizer();
+    }
+  };
+
+  const drawVisualizer = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    const bufferLength = analyzerRef.current.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+
+    const draw = () => {
+      requestAnimationFrame(draw);
+      analyzerRef.current.getByteFrequencyData(dataArray);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const barWidth = (canvas.width / bufferLength) * 2.5;
+      let x = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        const barHeight = (dataArray[i] / 255) * canvas.height;
+        const yPos = (canvas.height - barHeight) / 2;
+        const hue = (performance.now() / 40 + i * 2) % 360;
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+        ctx.fillStyle = `hsl(${hue}, 100%, 65%)`;
+        ctx.fillRect(x, yPos, barWidth - 1, barHeight);
+        x += barWidth;
+      }
+    };
+    draw();
+  };
+
+  const handleNext = () => {
+    if (library.length === 0) return;
+    setCurrentTrackIndex((prev) => (prev + 1) % library.length);
+    setIsPlaying(true);
+  };
+
+  const handlePrev = () => {
+    if (library.length === 0) return;
+    setCurrentTrackIndex((prev) => (prev - 1 + library.length) % library.length);
+    setIsPlaying(true);
+  };
+
+  const togglePlay = async () => {
+    if (!audioRef.current) return;
+    if (!audioCtxRef.current) initVisualizer();
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      if (audioCtxRef.current?.state === 'suspended') await audioCtxRef.current.resume();
+      try { await audioRef.current.play(); } catch (err) { console.error(err); }
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  const handleVolumeChange = (e) => {
+    const val = parseFloat(e.target.value);
+    setVolume(val);
+    // Save volume to localStorage
+    localStorage.setItem('studio-volume', val);
+    
+    if (gainNodeRef.current && audioCtxRef.current) {
+      gainNodeRef.current.gain.setTargetAtTime(val, audioCtxRef.current.currentTime, 0.05);
+    }
+    if (audioRef.current) audioRef.current.volume = val;
+  };
+
+  useEffect(() => {
+    if (isPlaying && audioRef.current) {
+      audioRef.current.play().catch(() => setIsPlaying(false));
+    }
+  }, [currentTrackIndex]);
+
+  if (isLoading) return <div className="h-screen bg-black flex items-center justify-center text-purple-500 font-mono italic">STUDIO_BOOTING...</div>;
+
+  return (
+    <div className={`h-screen w-full flex items-center justify-center overflow-hidden bg-[#020205] relative transition-all duration-1000 bg-gradient-to-br ${bgGradient}`}>
+      
+      {/* BACKGROUND VIDEO & PARTICLES */}
+      <video autoPlay loop muted className="absolute inset-0 z-0 w-full h-full object-cover opacity-20 grayscale pointer-events-none">
+        <source src="https://assets.mixkit.co/videos/preview/mixkit-abstract-moving-blue-and-purple-gradient-background-40076-large.mp4" type="video/mp4" />
+      </video>
+
+      <div className="absolute inset-0 z-0 opacity-20 pointer-events-none">
+        {[...Array(20)].map((_, i) => (
+          <div key={i} className="absolute bg-white rounded-full blur-[1px] animate-float"
+            style={{ width: '2px', height: '2px', top: `${Math.random() * 100}%`, left: `${Math.random() * 100}%`, animationDuration: `${Math.random() * 10 + 10}s` }}
+          />
+        ))}
+      </div>
+
+      {/* SIDEBAR: PLAYLIST & SEARCH */}
+      <div className="absolute left-8 top-1/2 -translate-y-1/2 z-20 w-72 max-h-[70vh] bg-white/[0.03] backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-6 flex flex-col shadow-2xl overflow-hidden">
+        <h3 className="text-white/40 text-[10px] font-black tracking-[0.3em] uppercase mb-4 px-2">Library ({currentGenre})</h3>
+        
+        <div className="relative mb-6">
+          <input 
+            type="text" 
+            placeholder="Search tracks..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-black/40 border border-white/5 rounded-xl py-2 px-4 text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-purple-500/50 transition-all"
+          />
+        </div>
+
+        <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
+          {filteredLibrary.map((track) => {
+            const isSelected = library[currentTrackIndex]?.id === track.id;
+            return (
+              <div 
+                key={track.id}
+                onClick={() => {
+                  const actualIndex = library.findIndex(s => s.id === track.id);
+                  setCurrentTrackIndex(actualIndex);
+                  if (!isPlaying) togglePlay();
+                }}
+                className={`p-3 rounded-xl cursor-pointer transition-all flex items-center gap-3 ${isSelected ? 'bg-purple-600/20 border border-purple-500/30' : 'hover:bg-white/5 border border-transparent'}`}
+              >
+                <div className="w-8 h-8 rounded-lg bg-black/40 flex-shrink-0 overflow-hidden">
+                   {track.album?.cover_art && <img src={track.album.cover_art} alt="" className="w-full h-full object-cover" />}
+                </div>
+                <div className="overflow-hidden">
+                  <p className={`text-[11px] font-bold truncate ${isSelected ? 'text-white' : 'text-white/60'}`}>{track.title}</p>
+                  <p className="text-[9px] text-purple-400/60 font-medium truncate uppercase">{track.artist_name}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* FLOATING BAR PLAYER */}
+      <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-10 w-[90%] max-w-[950px] h-[100px] bg-white/[0.03] backdrop-blur-[40px] border border-white/10 shadow-2xl rounded-full px-8 flex items-center justify-between gap-8 group">
+        
+        <div className="flex items-center gap-4 w-[250px]">
+          <div className="w-14 h-14 rounded-full bg-purple-500/10 border border-white/10 overflow-hidden shadow-lg">
+             {library[currentTrackIndex]?.album?.cover_art && <img src={library[currentTrackIndex].album.cover_art} className="w-full h-full object-cover" />}
+          </div>
+          <div className="overflow-hidden text-white">
+            <h2 className="font-bold text-sm truncate uppercase tracking-widest italic">{library[currentTrackIndex]?.title || "Studio"}</h2>
+            <p className="text-purple-400 text-[9px] font-black tracking-widest opacity-60 uppercase">{library[currentTrackIndex]?.artist_name || "Unknown"}</p>
+          </div>
+        </div>
+
+        <div className="flex-1 flex flex-col items-center gap-2 max-w-[400px]">
+          <div className="flex items-center gap-6">
+            <button onClick={handlePrev} className="text-white/20 hover:text-white transition-all">⏮</button>
+            <button onClick={togglePlay} className="w-12 h-12 bg-white text-black rounded-full flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]">
+                <span className="text-xl">{isPlaying ? '⏸' : '▶'}</span>
+            </button>
+            <button onClick={handleNext} className="text-white/20 hover:text-white transition-all">⏭</button>
+          </div>
+          <div className="w-full relative h-1 bg-white/10 rounded-full">
+            <input type="range" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20" value={progress} onChange={(e) => {
+              const seekTo = (e.target.value / 100) * audioRef.current.duration;
+              audioRef.current.currentTime = seekTo;
+            }} />
+            <div className="absolute top-0 left-0 h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full" style={{ width: `${progress}%` }}></div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-6 w-[300px] justify-end">
+          <div className="relative w-32 h-10 rounded-full bg-gradient-to-b from-[#1a1a2e] to-[#0a0a14] border border-white/5 overflow-hidden shadow-inner flex items-center justify-center">
+            <canvas ref={canvasRef} className="w-full h-full opacity-90" />
+          </div>
+          <div className="flex items-center gap-3 bg-black/20 px-4 py-2 rounded-full border border-white/5 text-white/20 text-[8px] font-black">
+            <span>VOL</span>
+            <input type="range" min="0" max="1" step="0.01" value={volume} onChange={handleVolumeChange} className="w-16 h-1 accent-white" />
+          </div>
+        </div>
+
+        <audio 
+          ref={audioRef} 
+          src={library[currentTrackIndex]?.audio_file} 
+          crossOrigin="anonymous" 
+          onTimeUpdate={() => setProgress((audioRef.current.currentTime / audioRef.current.duration) * 100 || 0)} 
+          onEnded={handleNext} 
+        />
+      </div>
+    </div>
+  );
+}
+
+
+export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+python
+
+
+
+
+
+
+
+/* 1. The Continuous RGB Text Animation */
+@keyframes rgb-text-glow {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* 2. Target EXACTLY the text div inside the user profile block */
+div[x-on\:click*="openUserLinks"] .flex-col .font-semibold.truncate {
+    /* The RGB gradient */
+    background: linear-gradient(270deg, #ff0000, #ff00ff, #0000ff, #00ffff, #00ff00, #ffff00, #ff0000) !important;
+    background-size: 600% 600% !important;
+    
+    /* Clips the color strictly to the letters */
+    -webkit-background-clip: text !important;
+    background-clip: text !important;
+    -webkit-text-fill-color: transparent !important;
+    color: transparent !important;
+    
+    /* Applies the animation */
+    animation: rgb-text-glow 4s linear infinite !important;
+    display: inline-block !important;
+}
+
+
+
+
+
+
