@@ -123,9 +123,6 @@ This application is a simulation built for educational and research purposes. No
 
 ***
 
-This Readme firmly establishes you as a developer who understands architecture, security, and UI/UX. It gives anyone looking at your code the exact context they need to realize how complex this project actually is. 
-
-Would you like me to help you draft the YouTube script next to showcase this on your channel?
 
 
 
