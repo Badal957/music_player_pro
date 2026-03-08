@@ -1,18 +1,8 @@
-I have included the standard stable versions to ensure future updates to these libraries don't break your audio engine or payment simulator.
-
 Django>=4.2.0
 djangorestframework>=3.14.0
 djangorestframework-simplejwt>=5.3.0
 django-cors-headers>=4.2.0
 mutagen>=1.46.0
 django-filter>=23.2
-
-
-How Your Viewers Will Use It
-
-Now, instead of typing out that long list of installations we used earlier, another developer or a recruiter looking at your portfolio just has to open their terminal and type one single command:
-Bash
-
-pip install -r requirements.txt
-
-This will automatically read the file, fetch every single package, and perfectly recreate your secure Django environment in seconds.
+gunicorn>=21.2.0
+whitenoise>=6.6.0
